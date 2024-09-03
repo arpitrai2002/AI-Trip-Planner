@@ -18,15 +18,22 @@ import {
 import { FcGoogle } from "react-icons/fc";
 import { useGoogleLogin } from "@react-oauth/google";
 import axios from "axios";
+import { doc, setDoc } from "firebase/firestore";
+import { db } from "@/service/firebaseConfiq.jsx";
+import { AiOutlineLoading3Quarters } from "react-icons/ai";
+import { useNavigate} from "react-router-dom";
 
 function CreateTrip() {
   const [place, setPlace] = useState(null);
   const [fromData, setFromData] = useState({});
   const [openDialog, setOpenDialog] = useState(false);
   const [user, setUser] = useState(null); // Added state to keep track of user data
+  const [loading, setLoding] = useState(false);
+
+  const navigate=useNavigate();
 
   const handleInputChange = (name, value) => {
-    setFromData(prev => ({
+    setFromData((prev) => ({
       ...prev,
       [name]: value,
     }));
@@ -64,7 +71,7 @@ function CreateTrip() {
       toast("Please fill all details");
       return;
     }
-
+    setLoding(true);
     const FINAL_PROMPT = AI_PROMPT.replace(
       "{location}",
       fromData?.location?.label
@@ -73,34 +80,49 @@ function CreateTrip() {
       .replace("{traveler}", fromData?.traveler)
       .replace("{budget}", fromData?.budget);
 
-    console.log(FINAL_PROMPT);
-
     try {
       const result = await chatSession.sendMessage(FINAL_PROMPT);
       console.log(result?.response?.text());
+      setLoding(false);
+      SaveAiTrip(result?.response?.text());
     } catch (error) {
       console.error("Error generating trip:", error);
       toast("Failed to generate trip. Please try again.");
     }
   };
 
-  const GetUserProfile = (tokenInfo) => {
-    axios.get('https://www.googleapis.com/oauth2/v1/userinfo', {
-      headers: {
-        Authorization: `Bearer ${tokenInfo?.access_token}`,
-        Accept: 'application/json'
-      }
-    })
-    .then((resp) => {
-      console.log(resp.data);
-      localStorage.setItem('user', JSON.stringify(resp.data));
-      setUser(resp.data); // Update state with user data
-      setOpenDialog(false); // Close the dialog
-    })
-    .catch((error) => {
-      console.error("Error fetching user profile:", error);
-      toast("Failed to fetch user profile. Please try again.");
+  const SaveAiTrip = async (TripData) => {
+    setLoding(true);
+    const user = JSON.parse(localStorage.getItem("user"));
+    const docID = Date.now().toString(); // Corrected typo here
+    await setDoc(doc(db, "AITrips", docID), {
+      userSelection: fromData,
+      tripData: JSON.parse(TripData),
+      userEmail: user?.email,
+      id: docID,
     });
+    setLoding(false);
+    navigate('/view-trip/'+docID)
+  };
+
+  const GetUserProfile = (tokenInfo) => {
+    axios
+      .get("https://www.googleapis.com/oauth2/v1/userinfo", {
+        headers: {
+          Authorization: `Bearer ${tokenInfo?.access_token}`,
+          Accept: "application/json",
+        },
+      })
+      .then((resp) => {
+        console.log(resp.data);
+        localStorage.setItem("user", JSON.stringify(resp.data));
+        setUser(resp.data); // Update state with user data
+        setOpenDialog(false); // Close the dialog
+      })
+      .catch((error) => {
+        console.error("Error fetching user profile:", error);
+        toast("Failed to fetch user profile. Please try again.");
+      });
   };
 
   return (
@@ -181,7 +203,13 @@ function CreateTrip() {
         </div>
 
         <div className="my-10 flex justify-end">
-          <Button onClick={onGenerateTrip}>Generate Trip</Button>
+          <Button disabled={loading} onClick={onGenerateTrip}>
+            {loading ? (
+              <AiOutlineLoading3Quarters className="h-7 w-7 animate-spin" />
+            ) : (
+              "Generate Trip"
+            )}
+          </Button>
         </div>
 
         <Dialog open={openDialog} onOpenChange={setOpenDialog}>
